@@ -251,3 +251,82 @@
     (ok true)
   )
 )
+
+(define-public (emergency-withdraw
+    (amount uint)
+    (recipient principal)
+  )
+  (begin
+    ;; Add recipient validation
+    (asserts! (is-valid-recipient recipient)
+      (err ERROR-INVALID-RECIPIENT-ADDRESS)
+    )
+
+    (asserts! (is-eq tx-sender CONTRACT-DEPLOYER) (err ERROR-NOT-AUTHORIZED))
+    (asserts!
+      (>= (- u0 (var-get last-emergency-withdrawal-height)) EMERGENCY-TIMELOCK)
+      (err ERROR-TIMELOCK-NOT-EXPIRED)
+    )
+    (asserts! (>= (var-get total-bridged-amount) amount)
+      (err ERROR-INSUFFICIENT-BALANCE)
+    )
+
+    (let (
+        (current-balance (default-to u0 (map-get? bridge-balances recipient)))
+        (new-balance (+ current-balance amount))
+      )
+      (var-set last-emergency-withdrawal-height u0)
+      (map-set bridge-balances recipient new-balance)
+      (var-set total-bridged-amount (- (var-get total-bridged-amount) amount))
+
+      (print {
+        type: "emergency-withdraw",
+        recipient: recipient,
+        amount: amount,
+      })
+
+      (ok true)
+    )
+  )
+)
+
+;; READ-ONLY FUNCTIONS
+
+(define-read-only (get-validator-status (validator principal))
+  (match (map-get? validators validator)
+    validator-info (get active validator-info)
+    false
+  )
+)
+
+(define-read-only (get-bridge-balance (user principal))
+  (default-to u0 (map-get? bridge-balances user))
+)
+
+(define-read-only (validate-deposit-amount (amount uint))
+  (and
+    (>= amount MIN-DEPOSIT-AMOUNT)
+    (<= amount MAX-DEPOSIT-AMOUNT)
+  )
+)
+
+(define-read-only (is-valid-tx-hash (tx-hash (buff 32)))
+  (and
+    (not (is-eq tx-hash 0x)) ;; Ensure not a zero hash
+    (is-eq (len tx-hash) u32) ;; Ensure exactly 32 bytes
+  )
+)
+
+(define-read-only (is-valid-signature (signature (buff 65)))
+  (and
+    (not (is-eq signature 0x)) ;; Ensure not a zero signature
+    (is-eq (len signature) u65) ;; Ensure exactly 65 bytes
+  )
+)
+
+(define-read-only (is-valid-recipient (recipient principal))
+  (and
+    (not (is-eq recipient addr-zero))
+    (is-some (some recipient))
+  )
+)
