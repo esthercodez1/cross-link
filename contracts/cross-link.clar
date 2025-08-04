@@ -186,3 +186,68 @@
     )
   )
 )
+
+(define-public (confirm-deposit
+    (tx-hash (buff 32))
+    (signature (buff 65))
+  )
+  (let (
+      (deposit (unwrap! (map-get? deposits { tx-hash: tx-hash })
+        (err ERROR-INVALID-BRIDGE-STATUS)
+      ))
+      (is-validator (get-validator-status tx-sender))
+    )
+    ;; Add additional validation for tx-hash
+    (asserts! (is-valid-tx-hash tx-hash) (err ERROR-INVALID-TX-HASH))
+
+    (asserts! (not (var-get bridge-paused)) (err ERROR-BRIDGE-PAUSED))
+    (asserts! (is-valid-signature signature) (err ERROR-INVALID-SIGNATURE))
+    (asserts! (not (get processed deposit)) (err ERROR-ALREADY-PROCESSED))
+    (asserts! (>= (var-get total-validators) MIN-VALIDATORS)
+      (err ERROR-INSUFFICIENT-VALIDATORS)
+    )
+
+    (map-set deposits { tx-hash: tx-hash } (merge deposit { processed: true }))
+
+    (map-set bridge-balances (get recipient deposit)
+      (+ (default-to u0 (map-get? bridge-balances (get recipient deposit)))
+        (get amount deposit)
+      ))
+
+    (var-set total-bridged-amount
+      (+ (var-get total-bridged-amount) (get amount deposit))
+    )
+
+    (print {
+      type: "deposit-confirmed",
+      tx-hash: tx-hash,
+      amount: (get amount deposit),
+      recipient: (get recipient deposit),
+    })
+
+    (ok true)
+  )
+)
+
+(define-public (withdraw
+    (amount uint)
+    (btc-recipient (buff 34))
+  )
+  (let ((current-balance (get-bridge-balance tx-sender)))
+    (asserts! (not (var-get bridge-paused)) (err ERROR-BRIDGE-PAUSED))
+    (asserts! (>= current-balance amount) (err ERROR-INSUFFICIENT-BALANCE))
+
+    (map-set bridge-balances tx-sender (- current-balance amount))
+
+    (print {
+      type: "withdraw",
+      sender: tx-sender,
+      amount: amount,
+      btc-recipient: btc-recipient,
+      timestamp: u0,
+    })
+
+    (var-set total-bridged-amount (- (var-get total-bridged-amount) amount))
+    (ok true)
+  )
+)
